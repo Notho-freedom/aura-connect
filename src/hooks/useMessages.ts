@@ -20,18 +20,30 @@ export function useMessages(conversationId: string | null) {
 
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data: messagesData } = await supabase
       .from("messages")
-      .select(`
-        *,
-        sender:profiles!messages_sender_id_fkey(*)
-      `)
+      .select("*")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(100);
 
-    if (data) {
-      setMessages(data as (Message & { sender?: Profile })[]);
+    if (messagesData && messagesData.length > 0) {
+      // Fetch sender profiles separately
+      const senderIds = [...new Set(messagesData.map((m) => m.sender_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("*")
+        .in("user_id", senderIds);
+
+      const profileMap = new Map(profiles?.map((p) => [p.user_id, p as Profile]) || []);
+
+      const messagesWithSenders = messagesData.map((m) => ({
+        ...m,
+        type: m.type as Message["type"],
+        sender: profileMap.get(m.sender_id),
+      }));
+
+      setMessages(messagesWithSenders);
     }
 
     // Update last_read_at

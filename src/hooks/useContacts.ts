@@ -27,18 +27,32 @@ export function useContacts() {
 
     setLoading(true);
     
-    const { data, error } = await supabase
+    // Fetch contacts
+    const { data: contactsData } = await supabase
       .from("contacts")
-      .select(`
-        *,
-        profile:profiles!contacts_contact_user_id_fkey(*)
-      `)
+      .select("*")
       .eq("user_id", user.id)
       .order("is_favorite", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (data) {
-      setContacts(data as unknown as Contact[]);
+    if (contactsData && contactsData.length > 0) {
+      // Fetch profiles for contacts
+      const contactUserIds = contactsData.map((c) => c.contact_user_id);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("*")
+        .in("user_id", contactUserIds);
+
+      const profileMap = new Map(profiles?.map((p) => [p.user_id, p as Profile]) || []);
+
+      const contactsWithProfiles = contactsData.map((c) => ({
+        ...c,
+        profile: profileMap.get(c.contact_user_id) as Profile,
+      }));
+
+      setContacts(contactsWithProfiles);
+    } else {
+      setContacts([]);
     }
     
     setLoading(false);
@@ -96,14 +110,15 @@ export function useContacts() {
         contact_user_id: contactProfile.user_id,
         nickname,
       })
-      .select(`
-        *,
-        profile:profiles!contacts_contact_user_id_fkey(*)
-      `)
+      .select("*")
       .single();
 
     if (data) {
-      setContacts((prev) => [data as unknown as Contact, ...prev]);
+      const newContact: Contact = {
+        ...data,
+        profile: contactProfile as Profile,
+      };
+      setContacts((prev) => [newContact, ...prev]);
     }
 
     return { data, error };
