@@ -11,6 +11,8 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import Contacts from "./pages/Contacts";
+import Messages from "./pages/Messages";
+import History from "./pages/History";
 import JoinCall from "./pages/JoinCall";
 import PreCall from "./pages/PreCall";
 import VideoCall from "./pages/VideoCall";
@@ -42,6 +44,30 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Contacts />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/messages"
+                element={
+                  <ProtectedRoute>
+                    <Messages />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/messages/:conversationId"
+                element={
+                  <ProtectedRoute>
+                    <Messages />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/history"
+                element={
+                  <ProtectedRoute>
+                    <History />
                   </ProtectedRoute>
                 }
               />
