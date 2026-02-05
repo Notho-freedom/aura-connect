@@ -41,6 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: `${window.location.origin}/`,
+      extraParams: {
+        access_type: "offline",
+        prompt: "consent",
+        scope: "https://www.googleapis.com/auth/contacts.readonly",
+      },
     });
 
     if (result.error) {
