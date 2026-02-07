@@ -135,5 +135,62 @@ export function useCalls() {
     return { error };
   };
 
-  return { calls, loading, createCall, updateCallStatus, refetch: fetchCalls };
+  const acceptCall = async (callId: string) => {
+    if (!user) return { error: new Error("Not authenticated") };
+
+    // Update participant's joined_at timestamp
+    await supabase
+      .from("call_participants")
+      .update({ joined_at: new Date().toISOString() })
+      .eq("call_id", callId)
+      .eq("user_id", user.id);
+
+    // Check if we should update call status to active
+    const { data: participants } = await supabase
+      .from("call_participants")
+      .select("*")
+      .eq("call_id", callId)
+      .not("joined_at", "is", null);
+
+    if (participants && participants.length <= 2) {
+      await supabase
+        .from("calls")
+        .update({ status: "active", started_at: new Date().toISOString() })
+        .eq("id", callId)
+        .eq("status", "pending");
+    }
+
+    await fetchCalls();
+    return { error: null, callId };
+  };
+
+  const declineCall = async (callId: string) => {
+    if (!user) return { error: new Error("Not authenticated") };
+
+    // Update participant's left_at timestamp
+    await supabase
+      .from("call_participants")
+      .update({ left_at: new Date().toISOString() })
+      .eq("call_id", callId)
+      .eq("user_id", user.id);
+
+    // Check if all participants have declined
+    const { data: activeParticipants } = await supabase
+      .from("call_participants")
+      .select("*")
+      .eq("call_id", callId)
+      .is("left_at", null);
+
+    if (!activeParticipants || activeParticipants.length <= 1) {
+      await supabase
+        .from("calls")
+        .update({ status: "declined", ended_at: new Date().toISOString() })
+        .eq("id", callId);
+    }
+
+    await fetchCalls();
+    return { error: null };
+  };
+
+  return { calls, loading, createCall, updateCallStatus, acceptCall, declineCall, refetch: fetchCalls };
 }

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Video,
@@ -7,18 +7,70 @@ import {
   Mic,
   MicOff,
   Settings,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
+import { useCalls } from "@/hooks/useCalls";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function PreCall() {
   const navigate = useNavigate();
   const { meetingId } = useParams();
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const { calls, createCall, acceptCall } = useCalls();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
+  const [callInfo, setCallInfo] = useState<{
+    exists: boolean;
+    isInitiator: boolean;
+    participantIds: string[];
+  } | null>(null);
+
+  // Get target user ID from query params (when initiating a call to someone)
+  const targetUserId = searchParams.get("userId");
+
+  // Check if this call exists and get info
+  useEffect(() => {
+    const checkCall = async () => {
+      if (!meetingId || !user) return;
+
+      // Check if this is an existing call
+      const { data: existingCall } = await supabase
+        .from("calls")
+        .select("*, call_participants(*)")
+        .eq("id", meetingId)
+        .single();
+
+      if (existingCall) {
+        const isInitiator = existingCall.initiated_by === user.id;
+        const participantIds = existingCall.call_participants
+          ?.filter((p: { user_id: string }) => p.user_id !== user.id)
+          .map((p: { user_id: string }) => p.user_id) || [];
+
+        setCallInfo({
+          exists: true,
+          isInitiator,
+          participantIds,
+        });
+      } else {
+        // This is a new call
+        setCallInfo({
+          exists: false,
+          isInitiator: true,
+          participantIds: targetUserId ? [targetUserId] : [],
+        });
+      }
+    };
+
+    checkCall();
+  }, [meetingId, user, targetUserId]);
 
   useEffect(() => {
     const initMedia = async () => {
@@ -66,10 +118,61 @@ export default function PreCall() {
     }
   };
 
-  const joinCall = () => {
-    // Stop the preview stream before navigating
+  const joinCall = async () => {
+    if (!user || !callInfo) return;
+
+    setIsJoining(true);
+
+    try {
+      // Stop the preview stream before navigating
+      stream?.getTracks().forEach((track) => track.stop());
+
+      if (callInfo.exists) {
+        // Join existing call
+        const result = await acceptCall(meetingId!);
+        if (result.error) {
+          console.error("Error joining call:", result.error);
+          setIsJoining(false);
+          return;
+        }
+      } else if (callInfo.participantIds.length > 0) {
+        // Create a new call with the target user
+        const result = await createCall(callInfo.participantIds, "video");
+        if (result.error) {
+          console.error("Error creating call:", result.error);
+          setIsJoining(false);
+          return;
+        }
+        // Navigate to the new call
+        if (result.data) {
+          navigate(`/call/${result.data.id}`, {
+            state: {
+              videoEnabled,
+              audioEnabled,
+              isInitiator: true,
+            },
+          });
+          return;
+        }
+      }
+
+      // Navigate to the call
+      navigate(`/call/${meetingId}`, {
+        state: {
+          videoEnabled,
+          audioEnabled,
+          isInitiator: callInfo.isInitiator,
+        },
+      });
+    } catch (error) {
+      console.error("Error joining call:", error);
+      setIsJoining(false);
+    }
+  };
+
+  const handleBack = () => {
     stream?.getTracks().forEach((track) => track.stop());
-    navigate(`/call/${meetingId}`, { state: { videoEnabled, audioEnabled } });
+    navigate("/");
   };
 
   return (
@@ -82,10 +185,7 @@ export default function PreCall() {
               variant="ghost"
               size="icon"
               className="rounded-full"
-              onClick={() => {
-                stream?.getTracks().forEach((track) => track.stop());
-                navigate("/");
-              }}
+              onClick={handleBack}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -138,6 +238,7 @@ export default function PreCall() {
               variant="ghost"
               size="lg"
               onClick={toggleAudio}
+              disabled={isJoining}
               className={`h-14 w-14 rounded-full ${
                 !audioEnabled ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "glass-card"
               }`}
@@ -153,6 +254,7 @@ export default function PreCall() {
               variant="ghost"
               size="lg"
               onClick={toggleVideo}
+              disabled={isJoining}
               className={`h-14 w-14 rounded-full ${
                 !videoEnabled ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "glass-card"
               }`}
@@ -170,12 +272,22 @@ export default function PreCall() {
             <Button
               onClick={joinCall}
               size="lg"
+              disabled={isJoining || !callInfo}
               className="w-full max-w-xs rounded-xl bg-accent py-6 text-lg font-medium text-accent-foreground hover:bg-accent/90"
             >
-              Rejoindre l'appel
+              {isJoining ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Connexion...
+                </>
+              ) : callInfo?.exists ? (
+                "Rejoindre l'appel"
+              ) : (
+                "Démarrer l'appel"
+              )}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              Code de réunion : <span className="font-mono font-medium">{meetingId}</span>
+              Code de réunion : <span className="font-mono font-medium">{meetingId?.slice(0, 8)}</span>
             </p>
           </div>
         </motion.div>
