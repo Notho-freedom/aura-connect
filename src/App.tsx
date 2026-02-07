@@ -2,10 +2,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/providers/ThemeProvider";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useIncomingCalls } from "@/hooks/useIncomingCalls";
+import { IncomingCallModal } from "@/components/call/IncomingCallModal";
 
 // Pages
 import AuthPage from "./pages/AuthPage";
@@ -21,6 +23,31 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Global incoming call listener component
+function IncomingCallListener() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { incomingCall, isRinging, acceptCall, declineCall } = useIncomingCalls();
+
+  const handleAccept = async () => {
+    const callId = await acceptCall();
+    if (callId) {
+      navigate(`/call/${callId}`);
+    }
+  };
+
+  if (!user) return null;
+
+  return (
+    <IncomingCallModal
+      call={incomingCall}
+      isRinging={isRinging}
+      onAccept={handleAccept}
+      onDecline={declineCall}
+    />
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider defaultTheme="dark">
@@ -29,6 +56,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <IncomingCallListener />
             <Routes>
               <Route path="/auth" element={<AuthPage />} />
               <Route

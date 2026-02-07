@@ -1,34 +1,33 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect } from "react";
 import { Video, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function NewCall() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    // Generate a unique meeting ID
+    // Get target user ID if calling a specific user
+    const userId = searchParams.get("userId");
+
+    // Generate a unique meeting ID (UUID format for database compatibility)
     const generateMeetingId = () => {
-      const chars = "abcdefghijklmnopqrstuvwxyz";
-      const segments = [3, 4, 3];
-      return segments
-        .map((len) =>
-          Array.from({ length: len }, () =>
-            chars.charAt(Math.floor(Math.random() * chars.length))
-          ).join("")
-        )
-        .join("-");
+      return crypto.randomUUID();
     };
 
     const meetingId = generateMeetingId();
     
     // Small delay for visual feedback
     const timer = setTimeout(() => {
-      navigate(`/pre-call/${meetingId}`, { replace: true });
+      const url = userId
+        ? `/pre-call/${meetingId}?userId=${userId}`
+        : `/pre-call/${meetingId}`;
+      navigate(url, { replace: true });
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background safe-area-inset">

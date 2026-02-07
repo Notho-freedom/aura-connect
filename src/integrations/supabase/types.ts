@@ -269,6 +269,44 @@ export type Database = {
         }
         Relationships: []
       }
+      signaling_messages: {
+        Row: {
+          call_id: string | null
+          created_at: string | null
+          id: string
+          payload: Json
+          recipient_id: string
+          sender_id: string
+          type: string
+        }
+        Insert: {
+          call_id?: string | null
+          created_at?: string | null
+          id?: string
+          payload: Json
+          recipient_id: string
+          sender_id: string
+          type: string
+        }
+        Update: {
+          call_id?: string | null
+          created_at?: string | null
+          id?: string
+          payload?: Json
+          recipient_id?: string
+          sender_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signaling_messages_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
