@@ -1,25 +1,14 @@
 import { motion } from "framer-motion";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
-import {
-  Video,
-  VideoOff,
-  Mic,
-  MicOff,
-  PhoneOff,
-  Users,
-  Copy,
-  Check,
-  MoreHorizontal,
-  Grid3X3,
-  Maximize2,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Users, Copy, Check } from "lucide-react";
 import { useMediaStream } from "@/hooks/useMediaStream";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useCalls } from "@/hooks/useCalls";
 import { useAuth } from "@/hooks/useAuth";
-import { ParticipantVideo } from "@/components/call/ParticipantVideo";
+import { VideoGrid } from "@/components/call/VideoGrid";
+import { CallControls } from "@/components/call/CallControls";
 import { CallTimer } from "@/components/call/CallTimer";
+import { CallQualityIndicator } from "@/components/call/CallQualityIndicator";
 import { useEffect, useRef, useState, useCallback } from "react";
 
 export default function VideoCall() {
@@ -34,7 +23,10 @@ export default function VideoCall() {
   const [callStartTime, setCallStartTime] = useState<Date | null>(null);
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [participantNames, setParticipantNames] = useState<Map<string, string>>(new Map());
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | undefined>();
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const screenStreamRef = useRef<MediaStream | null>(null);
 
   const initialState = location.state as {
     videoEnabled?: boolean;
@@ -82,7 +74,15 @@ export default function VideoCall() {
     isInitiator: initialState?.isInitiator ?? false,
   });
 
+  // Get first peer connection for quality indicator
+  const firstPeerConnection = peers.length > 0 ? peers[0].connection : null;
+
   const handleEndCall = useCallback(async () => {
+    // Stop screen sharing if active
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
     stopStream();
     await endAllCalls();
     if (meetingId) {
@@ -90,6 +90,31 @@ export default function VideoCall() {
     }
     navigate("/");
   }, [stopStream, endAllCalls, meetingId, updateCallStatus, navigate]);
+
+  const handleToggleScreenShare = useCallback(async () => {
+    if (isScreenSharing && screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+      setIsScreenSharing(false);
+    } else {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        });
+        screenStreamRef.current = screenStream;
+        setIsScreenSharing(true);
+
+        // Stop sharing when user ends via browser UI
+        screenStream.getVideoTracks()[0].onended = () => {
+          setIsScreenSharing(false);
+          screenStreamRef.current = null;
+        };
+      } catch (error) {
+        console.error("Error sharing screen:", error);
+      }
+    }
+  }, [isScreenSharing]);
 
   const copyMeetingLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/join/${meetingId}`);
@@ -125,10 +150,10 @@ export default function VideoCall() {
     {
       id: "self",
       name: "Vous",
-      stream: stream,
+      stream: isScreenSharing && screenStreamRef.current ? screenStreamRef.current : stream,
       isSelf: true,
       isMuted: !audioEnabled,
-      isVideoOff: !videoEnabled,
+      isVideoOff: !videoEnabled && !isScreenSharing,
     },
     ...participantIds.map((peerId) => ({
       id: peerId,
@@ -146,67 +171,11 @@ export default function VideoCall() {
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-black">
       {/* Video grid */}
       <div className="flex-1 p-2 sm:p-4">
-        {viewMode === "grid" ? (
-          <div
-            className={`grid h-full gap-2 sm:gap-4 ${
-              participantCount === 1
-                ? "grid-cols-1"
-                : participantCount === 2
-                ? "grid-cols-1 sm:grid-cols-2"
-                : participantCount <= 4
-                ? "grid-cols-2"
-                : "grid-cols-2 lg:grid-cols-3"
-            }`}
-          >
-            {allParticipants.map((participant, index) => (
-              <motion.div
-                key={participant.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-                className="relative"
-              >
-                <ParticipantVideo
-                  stream={participant.stream}
-                  participantName={participant.name}
-                  isSelf={participant.isSelf}
-                  isMuted={participant.isMuted}
-                  isVideoOff={participant.isVideoOff}
-                />
-              </motion.div>
-            ))}
-          </div>
-        ) : (
-          // Speaker view - show main speaker fullscreen with thumbnails
-          <div className="relative h-full">
-            <ParticipantVideo
-              stream={stream}
-              participantName="Vous"
-              isSelf={true}
-              isMuted={!audioEnabled}
-              isVideoOff={!videoEnabled}
-              className="h-full"
-            />
-
-            {/* PiP thumbnails for remote participants */}
-            <div className="absolute bottom-4 right-4 flex gap-2">
-              {participantIds.slice(0, 3).map((peerId) => (
-                <motion.div
-                  key={peerId}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="h-20 w-28 overflow-hidden rounded-lg ring-2 ring-white/20 sm:h-24 sm:w-36"
-                >
-                  <ParticipantVideo
-                    stream={remoteStreams.get(peerId) || null}
-                    participantName={participantNames.get(peerId) || "Participant"}
-                    isSelf={false}
-                  />
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        )}
+        <VideoGrid
+          participants={allParticipants}
+          viewMode={viewMode}
+          activeSpeakerId={activeSpeakerId}
+        />
       </div>
 
       {/* Top bar */}
@@ -230,9 +199,17 @@ export default function VideoCall() {
             </div>
           )}
 
+        {/* Network quality indicator */}
+          <div className="hidden items-center rounded-full bg-black/50 px-3 py-2 backdrop-blur-lg sm:flex">
+            <CallQualityIndicator 
+              peerConnection={firstPeerConnection} 
+              showDetails={true}
+            />
+          </div>
+
           <div className="hidden items-center gap-2 rounded-full bg-black/50 px-4 py-2 backdrop-blur-lg sm:flex">
             <span className="font-mono text-sm text-white">{meetingId?.slice(0, 8)}</span>
-            <button onClick={copyMeetingLink} className="text-white/70 hover:text-white">
+            <button onClick={copyMeetingLink} className="text-white/70 hover:text-white transition-colors">
               {copied ? (
                 <Check className="h-4 w-4 text-accent" />
               ) : (
@@ -242,81 +219,29 @@ export default function VideoCall() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setViewMode(viewMode === "grid" ? "speaker" : "grid")}
-            className="h-10 w-10 rounded-full bg-black/50 text-white backdrop-blur-lg hover:bg-black/70"
-          >
-            {viewMode === "grid" ? (
-              <Maximize2 className="h-4 w-4" />
-            ) : (
-              <Grid3X3 className="h-4 w-4" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-10 w-10 rounded-full bg-black/50 text-white backdrop-blur-lg hover:bg-black/70"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+        {/* Mobile quality indicator */}
+        <div className="flex items-center gap-2 sm:hidden">
+          <div className="rounded-full bg-black/50 px-3 py-2 backdrop-blur-lg">
+            <CallQualityIndicator peerConnection={firstPeerConnection} />
+          </div>
         </div>
       </motion.div>
 
       {/* Bottom controls */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: showControls ? 1 : 0, y: showControls ? 0 : 20 }}
-        transition={{ duration: 0.2 }}
-        className="absolute bottom-0 left-0 right-0 z-20 p-4 pb-8 sm:pb-6"
-      >
-        <div className="flex items-center justify-center gap-3 sm:gap-4">
-          <Button
-            variant="ghost"
-            size="lg"
-            onClick={toggleAudio}
-            className={`h-14 w-14 rounded-full backdrop-blur-lg sm:h-16 sm:w-16 ${
-              !audioEnabled
-                ? "bg-destructive text-white hover:bg-destructive/90"
-                : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-          >
-            {audioEnabled ? (
-              <Mic className="h-6 w-6" />
-            ) : (
-              <MicOff className="h-6 w-6" />
-            )}
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="lg"
-            onClick={toggleVideo}
-            className={`h-14 w-14 rounded-full backdrop-blur-lg sm:h-16 sm:w-16 ${
-              !videoEnabled
-                ? "bg-destructive text-white hover:bg-destructive/90"
-                : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-          >
-            {videoEnabled ? (
-              <Video className="h-6 w-6" />
-            ) : (
-              <VideoOff className="h-6 w-6" />
-            )}
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="lg"
-            onClick={handleEndCall}
-            className="h-14 w-14 rounded-full bg-destructive text-white hover:bg-destructive/90 sm:h-16 sm:w-16"
-          >
-            <PhoneOff className="h-6 w-6" />
-          </Button>
-        </div>
-      </motion.div>
+      <div className="absolute bottom-0 left-0 right-0 z-20 p-4 pb-8 sm:pb-6">
+        <CallControls
+          audioEnabled={audioEnabled}
+          videoEnabled={videoEnabled}
+          isScreenSharing={isScreenSharing}
+          viewMode={viewMode}
+          onToggleAudio={toggleAudio}
+          onToggleVideo={toggleVideo}
+          onToggleScreenShare={handleToggleScreenShare}
+          onToggleViewMode={() => setViewMode(viewMode === "grid" ? "speaker" : "grid")}
+          onEndCall={handleEndCall}
+          visible={showControls}
+        />
+      </div>
     </div>
   );
 }
