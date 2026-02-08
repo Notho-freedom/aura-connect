@@ -20,7 +20,7 @@ export default function PreCall() {
   const { meetingId } = useParams();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { calls, createCall, acceptCall } = useCalls();
+  const { calls, createCall, acceptCall, findCallByCode } = useCalls();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -31,6 +31,7 @@ export default function PreCall() {
     exists: boolean;
     isInitiator: boolean;
     participantIds: string[];
+    actualCallId: string | null;
   } | null>(null);
 
   // Get target user ID from query params (when initiating a call to someone)
@@ -41,14 +42,10 @@ export default function PreCall() {
     const checkCall = async () => {
       if (!meetingId || !user) return;
 
-      // Check if this is an existing call
-      const { data: existingCall } = await supabase
-        .from("calls")
-        .select("*, call_participants(*)")
-        .eq("id", meetingId)
-        .single();
+      // Use findCallByCode to handle both full UUIDs and short codes
+      const { data: existingCall, error } = await findCallByCode(meetingId);
 
-      if (existingCall) {
+      if (existingCall && !error) {
         const isInitiator = existingCall.initiated_by === user.id;
         const participantIds = existingCall.call_participants
           ?.filter((p: { user_id: string }) => p.user_id !== user.id)
@@ -58,19 +55,21 @@ export default function PreCall() {
           exists: true,
           isInitiator,
           participantIds,
+          actualCallId: existingCall.id,
         });
       } else {
-        // This is a new call
+        // This is a new call - meetingId should be a full UUID
         setCallInfo({
           exists: false,
           isInitiator: true,
           participantIds: targetUserId ? [targetUserId] : [],
+          actualCallId: null,
         });
       }
     };
 
     checkCall();
-  }, [meetingId, user, targetUserId]);
+  }, [meetingId, user, targetUserId, findCallByCode]);
 
   useEffect(() => {
     const initMedia = async () => {
@@ -127,14 +126,51 @@ export default function PreCall() {
       // Stop the preview stream before navigating
       stream?.getTracks().forEach((track) => track.stop());
 
-      if (callInfo.exists) {
-        // Join existing call
-        const result = await acceptCall(meetingId!);
-        if (result.error) {
-          console.error("Error joining call:", result.error);
-          setIsJoining(false);
-          return;
+      // Use the actual call ID from database if it exists
+      const actualCallId = callInfo.actualCallId || meetingId;
+
+      if (callInfo.exists && actualCallId) {
+        // Join existing call - add user as participant if not already
+        const { data: existingParticipant } = await supabase
+          .from("call_participants")
+          .select("*")
+          .eq("call_id", actualCallId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (!existingParticipant) {
+          // Add user as participant
+          await supabase
+            .from("call_participants")
+            .insert({
+              call_id: actualCallId,
+              user_id: user.id,
+              joined_at: new Date().toISOString(),
+            });
+        } else {
+          // Update joined_at timestamp
+          await supabase
+            .from("call_participants")
+            .update({ joined_at: new Date().toISOString() })
+            .eq("call_id", actualCallId)
+            .eq("user_id", user.id);
         }
+
+        // Update call status to active if needed
+        await supabase
+          .from("calls")
+          .update({ status: "active", started_at: new Date().toISOString() })
+          .eq("id", actualCallId)
+          .eq("status", "pending");
+
+        // Navigate to the call with the actual UUID
+        navigate(`/call/${actualCallId}`, {
+          state: {
+            videoEnabled,
+            audioEnabled,
+            isInitiator: callInfo.isInitiator,
+          },
+        });
       } else if (callInfo.participantIds.length > 0) {
         // Create a new call with the target user
         const result = await createCall(callInfo.participantIds, "video");
@@ -154,16 +190,24 @@ export default function PreCall() {
           });
           return;
         }
+      } else {
+        // Creating a new call without a specific target
+        const result = await createCall([], "video");
+        if (result.error) {
+          console.error("Error creating call:", result.error);
+          setIsJoining(false);
+          return;
+        }
+        if (result.data) {
+          navigate(`/call/${result.data.id}`, {
+            state: {
+              videoEnabled,
+              audioEnabled,
+              isInitiator: true,
+            },
+          });
+        }
       }
-
-      // Navigate to the call
-      navigate(`/call/${meetingId}`, {
-        state: {
-          videoEnabled,
-          audioEnabled,
-          isInitiator: callInfo.isInitiator,
-        },
-      });
     } catch (error) {
       console.error("Error joining call:", error);
       setIsJoining(false);
@@ -287,7 +331,7 @@ export default function PreCall() {
               )}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              Code de réunion : <span className="font-mono font-medium">{meetingId?.slice(0, 8)}</span>
+              Code de réunion : <span className="font-mono font-medium">{(callInfo?.actualCallId || meetingId)?.slice(0, 8)}</span>
             </p>
           </div>
         </motion.div>

@@ -135,6 +135,33 @@ export function useCalls() {
     return { error };
   };
 
+  // Find a call by short code (first 8 characters of UUID)
+  const findCallByCode = async (code: string) => {
+    if (!code) return { data: null, error: new Error("No code provided") };
+
+    // If it's already a valid UUID, search directly
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(code)) {
+      const { data, error } = await supabase
+        .from("calls")
+        .select("*, call_participants(*)")
+        .eq("id", code)
+        .single();
+      return { data, error };
+    }
+
+    // Otherwise, search by prefix (short code)
+    const { data, error } = await supabase
+      .from("calls")
+      .select("*, call_participants(*)")
+      .ilike("id", `${code}%`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    return { data, error };
+  };
+
   const acceptCall = async (callId: string) => {
     if (!user) return { error: new Error("Not authenticated") };
 
@@ -192,5 +219,5 @@ export function useCalls() {
     return { error: null };
   };
 
-  return { calls, loading, createCall, updateCallStatus, acceptCall, declineCall, refetch: fetchCalls };
+  return { calls, loading, createCall, updateCallStatus, acceptCall, declineCall, findCallByCode, refetch: fetchCalls };
 }
