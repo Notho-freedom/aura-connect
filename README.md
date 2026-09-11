@@ -1,5 +1,11 @@
 # Aura Connect
 
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-backend-3ECF8E?logo=supabase&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-tests-6E9F18?logo=vitest&logoColor=white)
+
 ![Aura Connect Screenshot](screenshots/homepage.png)
 
 ## Overview
@@ -26,21 +32,21 @@ Aura Connect is a modern communication platform built with React, TypeScript, Ta
 - **WebRTC** - Real-time communication
 
 ## Project Structure
-```
+```text
 aura-connect/
 ├── src/
 │   ├── components/
-│   │   ├── auth/       # Authentication components
-│   │   ├── call/       # Video call components
-│   │   ├── layout/     # App layout components
-│   │   └── ui/         # shadcn/ui components
-│   ├── hooks/          # Custom hooks (auth, calls, contacts, messages, etc.)
-│   ├── integrations/   # Supabase and Lovable integrations
-│   ├── pages/          # Auth, Contacts, Dashboard, History, Messages, VideoCall, etc.
-│   ├── providers/      # Theme provider
-│   └── lib/            # Utilities
-├── supabase/           # Config, migrations, edge functions
-└── public/             # Static assets
+│   │   ├── auth/
+│   │   ├── call/
+│   │   ├── layout/
+│   │   └── ui/
+│   ├── hooks/
+│   ├── integrations/
+│   ├── pages/
+│   ├── providers/
+│   └── lib/
+├── supabase/
+└── public/
 ```
 
 ## Getting Started
@@ -61,11 +67,16 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) to view the app.
+Open `http://localhost:5173` to view the app.
 
 ### Build
 ```bash
 npm run build
+```
+
+### Tests
+```bash
+npm run test
 ```
 
 ## Screenshots
